@@ -40,15 +40,11 @@ class CONFIG_INVESTMENT:
 
 
 if __name__ == '__main__':
-    x = CONFIG_INVESTMENT.getWatchList("bond")
-    CONFIG_INVESTMENT.addWatchList("bond", [
-            "481001",
-            "003095",
-            "166002",
-            "000572",
-            "009860",
-            "160222",
-            "007020",
-            "217011",
-            "161716",]
-    )
+    x = CONFIG_INVESTMENT.getWatchList("stock")
+    # CONFIG_INVESTMENT.addWatchList("stock", [
+    #         "FIE.TO",
+    #         "VSP.TO",
+    #         "AAPL",
+    #         "IBM",]
+    # )
+    print(x)

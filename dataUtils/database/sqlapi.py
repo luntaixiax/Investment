@@ -12,6 +12,7 @@ from dataUtils.database.tables import Base, MutualFundHist
 
 class dbIO():
     engine = create_engine('mysql+mysqlconnector://root:allan19950601@localhost:3306/investment')
+    #engine = create_engine('sqlite:///C:/Users/luntaixia/Desktop/testInv.db')
     DBSession = sessionmaker(bind = engine)
 
     @ classmethod
@@ -200,4 +201,4 @@ def df2Tables(df : pd.DataFrame, table : Base) -> list:
 
 if __name__ == '__main__':
 
-    pass
+    dbIO.register()

@@ -2,7 +2,7 @@ import datetime
 import logging
 
 import pandas as pd
-from sqlalchemy import func
+from sqlalchemy import func, distinct
 
 from dataUtils.dataApis.funds.fundhist import FundDataManager
 from dataUtils.database.sqlapi import dbIO
@@ -149,6 +149,12 @@ class TradingDataManager:
 
         return dbIO.query_df(query)
 
+    def get_touched(self) -> list:
+        with dbIO.get_session() as s:
+            query = s.query(distinct(TradeBook.fund_id).label("fund_id"))
+
+        df = dbIO.query_df(query)
+        return df["fund_id"].values
 
 
 
@@ -183,9 +189,8 @@ if __name__ == '__main__':
     # tdm.buy("160222", datetime.datetime(2021, 1, 6, 12, 27, 0), 1000, 0)
     # tdm.buy("160222", datetime.datetime(2021, 1, 20, 21, 17, 26), 500, 0)
 
-    tdm.buy("217011", datetime.datetime(2019, 12, 12, 22, 5, 47), 500, 0)
-    tdm.buy("217011", datetime.datetime(2020, 1, 15, 7, 22, 30), 1000, 0)
-
+    # tdm.buy("217011", datetime.datetime(2019, 12, 12, 22, 5, 47), 500, 0)
+    # tdm.buy("217011", datetime.datetime(2020, 1, 15, 7, 22, 30), 1000, 0)
 
 
 

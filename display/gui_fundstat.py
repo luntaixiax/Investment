@@ -1,5 +1,5 @@
-from typing import List
-
+from typing import List, Callable
+import pandas as pd
 import wx
 import wx.grid
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
@@ -7,6 +7,7 @@ from matplotlib.backends.backend_wxagg import NavigationToolbar2WxAgg as Navigat
 
 from analyst.investhistory.singlefundinvest import SingleFundInvestAnalyst
 from display.gui_common import MyStaticText, ScrollPanel, FmtGrid
+from utils.const import FREQ
 
 
 class DisplayTextPair:
@@ -114,6 +115,8 @@ class StatInfoPanel(wx.Panel):
 		kw2 = [
 			DisplayTextPair("Last Price", self.valuegetter('Last Price'), lambda v: f"{v:.4f}"),
 			DisplayTextPair("Average Cost", self.valuegetter('Average Cost'), lambda v: f"{v:.4f}"),
+			RedGreenTextPair("Last Gain/Loss", self.valuegetter('Last Gain/Loss'), lambda v: f"{v:,.2f}"),
+			RedGreenTextPair("Last Return", self.valuegetter('Last Return'), lambda v: f"{v:.2%}"),
 			DisplayTextPair("Shares Outstanding", self.valuegetter('Shares Outstanding'), lambda v: f"{v:.2f}"),
 			DisplayTextPair("Adj. Shares Bought", self.valuegetter('Shares Outstanding'), lambda v: f"{v:.2f}"),
 		]
@@ -204,6 +207,54 @@ class FigurePanel(wx.Panel):
 			canvas.draw()
 
 
+class ParamGridPanel(wx.ScrolledWindow):
+	def __init__(self, parent, fmt_dict : dict, color_dict : dict, df_getter : Callable[[str], pd.DataFrame]):
+		super().__init__(parent)
+		self.SetScrollbars(0, 1, 0, 20)
+
+		self.fmt_dict = fmt_dict
+		self.color_dict = color_dict
+		self.df_getter = df_getter
+		self.grid = None
+
+		self.vbox = wx.BoxSizer(wx.VERTICAL)
+
+		self.initPanel()
+		self.updateGrid()
+		self.SetSizer(self.vbox)
+
+	def initPanel(self):
+
+		self.choice = wx.Choice(self, -1, choices = ["Year", "Quarter", "Month", "Week"])
+		self.choice.Bind(wx.EVT_CHOICE, self.OnSelect)
+		self.choice.SetSelection(2)
+
+		hbox = wx.BoxSizer(wx.HORIZONTAL)
+		hbox.Add(MyStaticText(self, "Select Freq", fontid = "BarLabel1"), proportion = 0, flag = wx.ALL, border = 10)
+		hbox.Add(self.choice, proportion = 1, flag = wx.ALL | wx.EXPAND | wx.ALIGN_RIGHT, border = 10)
+
+		self.vbox.Add(hbox, proportion = 0, flag = wx.ALL | wx.EXPAND, border = 0)
+
+	def updateGrid(self):
+		if self.grid:
+			self.grid.Destroy()
+
+		df = self.df_getter(self.choice.GetString(self.choice.GetSelection()))
+
+		self.grid = FmtGrid(self, self.fmt_dict, self.color_dict)
+		self.grid.set(df)
+
+
+		self.vbox.Add(self.grid, proportion = 0, flag = wx.ALL | wx.EXPAND, border = 0)
+		self.grid.AutoSize()
+		#self.grid.Fit()
+		self.Layout()
+
+	def OnSelect(self, evt):
+		self.updateGrid()
+
+
+
 
 
 
@@ -263,8 +314,37 @@ class PeriodStatPanel(wx.Notebook):
 
 		sp.addSubPanel(grid)
 
-
 		self.AddPage(sp, "TestGridScrolled")
+
+		# add period stat for total invest
+		if separate is False:
+			fmt_dict = {
+				"Value": lambda v: f"{v:.2f}",
+				"Gain/Loss": lambda v: f"{v:.2f}",
+				"Invest": lambda v: f"{v:.2f}",
+				"Withdraw": lambda v: f"{v:.2f}",
+				"Cash Flow": lambda v: f"{v:.2f}",
+				"Period Return": lambda v: f"{v:.2%}",
+			}
+			color_dict = {
+				"Gain/Loss": lambda v: "#e04054" if v >= 0 else "#399239",
+				"Cash Flow": lambda v: "#e04054" if v >= 0 else "#399239",
+				"HPR": lambda v: "#e04054" if v >= 0 else "#399239",
+			}
+			def df_getter(choice):
+				freq = {
+					"Year" : FREQ.YEAR, "Quarter" : FREQ.QUARTER, "Month" : FREQ.MONTH, "Week" : FREQ.WEEK
+				}.get(choice)
+
+				return sfia.stat_by_period(freq = freq)[['MVt', 'Gt', 'Invt', 'Witt', 'CFt', 'HPRt']]  \
+						.rename(columns = {'MVt' : 'Value', 'Gt' : 'Gain/Loss',
+				                           'Invt' : 'Invest', 'Witt' : 'Withdraw',
+				                           'CFt' : 'Cash Flow', 'HPRt' : 'Period Return'})  \
+						.sort_index(ascending = False)
+
+			gridp = ParamGridPanel(self, fmt_dict = fmt_dict, color_dict = color_dict, df_getter = df_getter)
+			self.AddPage(gridp, "Period Stat")
+
 
 
 

@@ -2,15 +2,16 @@ import datetime
 
 import pandas as pd
 import numpy as np
-from typing import Union, List, Generator
+from typing import Generator
 
-from matplotlib.figure import Figure
 from matplotlib import pyplot as plt
 import matplotlib.ticker as mtick
 import seaborn as sns
 
+from analyst.investhistory.calc_tools import cut, MIRR, period_performance
 from dataUtils.dataApis.funds.fundhist import FundDataManager
 from dataUtils.dataApis.trading.tradingbook import TradingDataManager
+from utils.const import FREQ
 
 
 class SingleFundInvestAnalyst:
@@ -26,7 +27,7 @@ class SingleFundInvestAnalyst:
 
         :return: a table of investment performance:
 
-        columns = ["fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt", "Qbt", "MVt", "Gt", "At", "CFt", "Dt"]
+        columns = ["fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt", "Qbt", "MVt", "Gt", "At", "Invt", "Witt", "CFt", "Dt"]
         index = t = date
 
         known Variable from historical fund data:
@@ -42,13 +43,16 @@ class SingleFundInvestAnalyst:
             Q(t) - number of shares at the end of day t:   Q(t) = Q(t-1) * s(t) + Qb(t);  Q(0) = 0
             MV(t) - market value of the position on day t:   MV(t) = p(t) * Q(t)
             G(t) - gain/loss of the position on day t:   G(t) = [MV(t) + C(t)] - [MV(t-1) + C(t-1)] + A(t)= g(t) * Q(t-1)
-            C(t) - virtual cash balance at the end of day t:  CF(t) = C(t-1) + D(t) - p(t) * Qb(t) - A(t);  C(0) = 0
-            CF(t) - cash flow on day t: CF(t) = C(t) - C(t-1) = D(t) - p(t) * Qb(t) - A(t); CF(t) > 0 is inflow otherwise is outflow
+            Inv(t) - investment on day t: Inv(t) = p(t) * max(Qb(t), 0)
+            Wit(t) - withdraw on day t: Wit(t) = -p(t) * min(Qb(t), 0)
+            C(t) - virtual cash balance at the end of day t:  C(t) = C(t-1) + D(t) - p(t) * Qb(t) - A(t) = C(t-1) + D(t) + Wit(t) - Inv(t) - A(t);  C(0) = 0
+            CF(t) - cash flow on day t: CF(t) = C(t) - C(t-1) = D(t) + Wit(t) - Inv(t) - A(t); CF(t) > 0 is inflow otherwise is outflow
             D(t) - cash dividend received for the position on day t: D(t) = d(t) * Q(t-1)
         """
 
         # save results to summary
-        summary = pd.DataFrame(columns = ["date", "fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt", "Qbt", "MVt", "Gt", "At", "CFt", "Dt"]).set_index("date")
+        summary = pd.DataFrame(columns = ["date", "fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt",
+                                          "Qbt", "MVt", "Gt", "At", "Invt", "Witt", "CFt", "Dt"]).set_index("date")
 
         # first search trade book about relevant trades
         trade_df = self.tdm.query_trade(self.fund_id)
@@ -92,10 +96,14 @@ class SingleFundInvestAnalyst:
 
             MVt = pt * Qt # market value of the position = p(t) * Q(t)
             #Ct = Ct + Dt - pt * Qbt - At # cash balance at time t C(t) = C(t-1) + D(t) - p(t) * Qb(t) - A(t)
+            Invt = pt * max(Qbt, 0)  # invest amount at time t
+            Witt = -pt * min(Qbt, 0)  # withdraw amount at time t
             CFt = Dt - pt * Qbt - At  # cash flow at time t CF(t) = D(t) - p(t) * Qb(t) - A(t)
 
             # write into summary
-            summary.loc[t, ["fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt", "Qbt", "MVt", "Gt", "At", "CFt", "Dt"]] = [self.fund_id, pt, dt, st, rt, Qt, Qbt, MVt, Gt, At, CFt, Dt]
+            summary.loc[t, ["fund_id", "net_value", "div",  "split_ratio", "daily_return", "Qt", "Qbt", "MVt", "Gt",
+                            "At", "Invt", "Witt", "CFt", "Dt"]] = [
+                self.fund_id, pt, dt, st, rt, Qt, Qbt, MVt, Gt, At, Invt, Witt, CFt, Dt]
 
         return summary
 
@@ -124,20 +132,20 @@ class SingleFundInvestAnalyst:
         adj_buyQuant = 0
 
         for i, date in enumerate(subtrade_summary.index):
-            sr, rt, Q_b, gain, cost, CFt = subtrade_summary.loc[date, ["split_ratio", "daily_return", "Qbt", "Gt", "At", "CFt"]]
+            sr, rt, Q_b, gain, At, Dt, Invt, Witt, CFt = subtrade_summary.loc[date, ["split_ratio", "daily_return", "Qbt", "Gt", "At", "Dt", "Invt", "Witt", "CFt"]]
 
             adj_buyQuant = sr * adj_buyQuant + max(Q_b, 0)
 
             if i == 0:
                 rt = 0
 
-            HPR = rt / 100 if MV == 0 else (gain - cost) / MV  # one-day holding period return, equals fund return adjusted for transaction cost
+            HPR = rt / 100 if MV == 0 else (gain - At) / MV  # one-day holding period return, equals fund return adjusted for transaction cost
 
             # update MV to current day value
             MV = subtrade_summary.loc[date, "MVt"]
 
-            accum_invest = accum_invest - min(CFt, 0)
-            accum_withdraw = accum_withdraw + max(CFt, 0)
+            accum_invest = accum_invest + Invt + At
+            accum_withdraw = accum_withdraw + Witt + Dt
             accum_profit = MV + accum_withdraw - accum_invest
             avg_cost = accum_invest / adj_buyQuant
             accounting_r = accum_profit / accum_invest  # accumulative accounting profit margin
@@ -164,7 +172,7 @@ class SingleFundInvestAnalyst:
         trading_days = len(subtrade_summary)
         invest_period = (end_dt - start_dt).days
         n_shares, last_price, adj_buyQuant, MV = subtrade_summary.loc[end_dt, ["Qt", "net_value", "BuyQuant", "MVt"]]
-        avg_cost, TWR, accounting_r = subtrade_summary.loc[end_dt, ["AvgCost", "MarketReturnAccum", "InvestorReturnAccum"]]
+        Gt, HPR, avg_cost, TWR, accounting_r = subtrade_summary.loc[end_dt, ["Gt", "HPR", "AvgCost", "MarketReturnAccum", "InvestorReturnAccum"]]
         accum_invest, accum_withdraw = subtrade_summary.loc[end_dt, ["InvestAccum", "WithdrawAccum"]]
 
         accum_profit = MV + accum_withdraw - accum_invest
@@ -173,7 +181,7 @@ class SingleFundInvestAnalyst:
 
         # when calculating MIRR, should adjust last CF as if we sell all the position out
         # the last CF should be increase by MV
-        CFs = subtrade_summary["CFt"].values
+        CFs = list(subtrade_summary["CFt"].values)
         CFs[-1] += MV
         mirr, mirr_ann = MIRR(subtrade_summary.index, CFs)
 
@@ -196,6 +204,8 @@ class SingleFundInvestAnalyst:
             "Market Value": MV,
             "Last Price" : last_price,
             "Average Cost" : avg_cost,
+            "Last Gain/Loss": Gt,
+            "Last Return": HPR,
             "Accum Profit" : accum_profit,
             "Fund Return" : TWR,
             "Invest Return" : accounting_r,
@@ -207,6 +217,9 @@ class SingleFundInvestAnalyst:
             "Total Fee" : total_trans,
             "Fee Rate" : trans_rate,
         }
+
+    def stat_by_period(self, freq: FREQ = FREQ.MONTH) -> pd.DataFrame:
+        return period_performance(self.fund_summ.copy(), freq = freq)
 
     def plot_return_curve(self, separate = False, sep_i = 0):
         subtrade_summary = self.get_invest_stat(separate, sep_i)
@@ -271,9 +284,10 @@ class SingleFundInvestAnalyst:
         ax.fill_between(df.index, np.zeros(len(df.index)), df["accum_return"], color='#8fafb4', alpha=0.3)
         ax.scatter(df_trade.index, df_trade["accum_return"], c = df_trade["color"], s = 20, alpha = 1)
 
+        arrow_scale = 0.4 * (df["accum_return"].max() - df["accum_return"].min()) / df_trade["cf"].abs().max()
         for date in df_trade.index:
             ax.annotate("", xy = (date, df_trade.loc[date, "accum_return"]),
-                        xytext = (date, df_trade.loc[date, "accum_return"] - 0.4 * df_trade.loc[date, "cf"] / df_trade["cf"].abs().max()),
+                        xytext = (date, df_trade.loc[date, "accum_return"] - arrow_scale * df_trade.loc[date, "cf"]),
                         va = "center", ha = "center",
                         arrowprops = dict(arrowstyle = "<-", color = df_trade.loc[date, "color"]))
 
@@ -302,76 +316,21 @@ class SingleFundInvestAnalyst:
         # number of sub periods
         return len(self.invest_stat["Separated"])
 
-    def get_current_stat(self, separate = False, sep_i = 0):
+    def get_current_stat(self, separate = False, sep_i = 0) -> dict:
         if separate:
             return self.current_stat["Separated"][sep_i]
         else:
             return self.current_stat["Combined"]
 
-    def get_invest_stat(self, separate = False, sep_i = 0):
+    def get_invest_stat(self, separate = False, sep_i = 0) -> pd.DataFrame:
         if separate:
             return self.invest_stat["Separated"][sep_i]
         else:
             return self.invest_stat["Combined"]
 
 
-
-def cut(index_list, base_list, thres_amount : float = 1, thres_idle_interval : int = 10):
-    idle = 0
-    start_dt = None
-    end_dt = None
-
-    for i, (index, Qt) in enumerate(zip(index_list, base_list)):
-
-        if abs(Qt) >= thres_amount:
-            idle = 0
-            if start_dt is None:
-                start_dt = index
-
-        if abs(Qt) < thres_amount:
-            # suspect breaking point occur
-            if idle == 0:
-                end_dt = index  # the last date to be the end date
-
-            idle += 1
-
-            if idle > thres_idle_interval:
-                if start_dt is not None and end_dt is not None:
-                    yield start_dt, end_dt
-
-                #idle = 0
-                start_dt = None
-                end_dt = None
-
-    # add last period
-    if start_dt is not None:
-        yield start_dt, index_list[-1]
-
-
-def MIRR(dates, CFs, reinvest_rate = 0.03, wacc = 0.03):
-    start_dt = dates.min()
-    end_dt = dates.max()
-    invest_period = (end_dt - start_dt).days
-    PVout = 0  # pv of cash outflows at start_dt
-    FVin = 0  # fv of cash inflows at end_dt
-    for date, CF in zip(dates, CFs):
-        if CF < 0:
-            distance = (date - start_dt).days / 365
-            PVout += (CF * np.exp(- wacc * distance))
-        else:
-            distance = (end_dt - date).days / 365
-            FVin += (CF * np.exp(reinvest_rate * distance))
-
-    # return mirr, and annualized mirr
-    return - FVin / PVout - 1, np.log(- FVin / PVout) * 365 / invest_period
-
-
-
-
-
-
-
 if __name__ == '__main__':
     sfia = SingleFundInvestAnalyst(fund_id = "160222")
     #print(sfia.invest_stat["Separated"][0].to_csv("sub.csv"))
-    sfia.plot_operation(1)
+    x = sfia.stat_by_period(freq = FREQ.MONTH)
+    print(x)

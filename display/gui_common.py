@@ -96,7 +96,7 @@ class FmtGrid(wx.grid.Grid):
 					value = fmtter(value)
 				self.SetCellValue(i, j, str(value))
 
-		self.SetRowLabelSize(100)
+		self.SetRowLabelSize(wx.grid.GRID_AUTOSIZE)
 		self.Fit()
 		self.Layout()
 

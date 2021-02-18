@@ -39,15 +39,18 @@ class InvCalendar():
         else:
             return cls.next_trade_date(trade_time.date())
 
+    @ classmethod
+    def get_recent_trade_date(cls) -> datetime.date:
+        today = datetime.date.today()
+        if cls.is_trade_date(today):
+            return today
+        else:
+            return cls.previous_trade_date(today)
+
 
 
 
 
 if __name__ == '__main__':
 
-    base_date = datetime.date(2021,1,8)
-    print(InvCalendar.previous_trade_date(base_date))
-
-    trade_time = datetime.datetime(2020,7,7,23,29,13)
-    effect_date = InvCalendar.get_effect_date(trade_time)
-    print(trade_time, effect_date, InvCalendar.is_trade_date(trade_time.date()), InvCalendar.next_trade_date(trade_time.date()))
+    print(InvCalendar.get_recent_trade_date())

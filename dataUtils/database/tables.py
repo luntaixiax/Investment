@@ -1,6 +1,5 @@
 from sqlalchemy.ext.declarative import declarative_base, as_declarative
-from sqlalchemy import Column, Integer, String, Date, DateTime, Float, Numeric, DECIMAL, inspect
-
+from sqlalchemy import Column, Integer, String, Date, DateTime, Float, Numeric, DECIMAL, inspect, INT
 
 Base = declarative_base()
 
@@ -42,5 +41,29 @@ class MutualFundInfo(Base):
     fee_rate = Column(DECIMAL(5, 2), nullable = True)
 
 
+class StockHist(Base):
+    __tablename__ = "stockhist"
+
+    stock_id = Column(String(length = 10), primary_key = True, nullable = False)
+    date = Column(Date, primary_key = True, nullable = False)
+    open = Column(DECIMAL(8, 2), nullable = False)
+    high = Column(DECIMAL(8, 2), nullable = False)
+    low = Column(DECIMAL(8, 2), nullable = False)
+    close = Column(DECIMAL(8, 2), nullable = False)
+    vol = Column(DECIMAL(15, 0), nullable = False)
+    div = Column(DECIMAL(6, 2), nullable = False, server_default = "0.0")
+    split = Column(DECIMAL(6, 4), nullable = False, server_default = "1.0")
+
+
+class StockInfo(Base):
+    __tablename__ = "stockinfo"
+
+    stock_id = Column(String(length = 10), primary_key = True, nullable = False)
+    ass_type = Column(String(length = 10))
+    company = Column(String(length = 50))
+    exch = Column(String(length = 10))
+    cur = Column(String(length = 10))
+    sec = Column(String(length = 10))
+    ind = Column(String(length = 10))
 
 
