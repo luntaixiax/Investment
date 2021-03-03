@@ -205,6 +205,5 @@ class StockHistManager:
 if __name__ == '__main__':
 	shm = StockHistManager()
 	#shm.update_all()
-	df = shm.stat_hist(stock_id = "VSP.TO")
-	# #df.to_csv("stat.csv")
+	df = shm.query_hist_adj(stock_id = "VSP.TO")
 	print(df)
